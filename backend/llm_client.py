@@ -8,7 +8,6 @@ pipeline degrades gracefully instead of crashing.
 
 import json
 import os
-import re
 import time
 from pathlib import Path
 
@@ -73,11 +72,39 @@ def _build_prompt(message: str, history: list) -> str:
     return PROMPT_TEMPLATE.format(history_block=history_block, message=message)
 
 
-def _strip_fences(text: str) -> str:
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?", "", text).strip()
-    text = re.sub(r"```$", "", text).strip()
-    return text
+def _extract_json_object(text: str) -> str:
+    """Find the first '{' and its balanced matching '}' anywhere in text.
+
+    Reasoning models (and free OpenRouter models especially) often wrap the
+    JSON object in preamble or trailing commentary, or markdown fences.
+    Scanning for a balanced brace pair tolerates all of that without relying
+    on the model obeying "no commentary" instructions.
+    """
+    start = text.find("{")
+    if start == -1:
+        raise ValueError("no JSON object found in response")
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    raise ValueError("no balanced JSON object found in response")
 
 
 def _call_gemini(prompt: str) -> str:
@@ -134,11 +161,19 @@ def _call_openrouter(prompt: str) -> str:
         "model": OPENROUTER_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.4,
-        "max_tokens": 200,
+        # 400, not 200 like the other providers: nex-agi/nex-n2.5-mini:free
+        # isn't a clean instruction follower and often spends part of its
+        # budget on preamble/reasoning text before the actual JSON object,
+        # which showed up as "no balanced brace pair found" (truncation)
+        # rather than malformed content — 2 of 3 real runs failed at 200
+        # tokens while the brace extractor itself tested clean against
+        # every other kind of malformed input. Gemini and OpenAI haven't
+        # shown this, so they stay at 200.
+        "max_tokens": 400,
     }
     # No response_format here: free OpenRouter models don't reliably honor
-    # json_object mode, so this relies on the same fence-stripping + parsing
-    # logic used for Gemini's occasional markdown-wrapped output.
+    # json_object mode, so this relies on the same balanced-brace extraction
+    # used for Gemini's occasional markdown-wrapped or preamble-prefixed output.
     resp = requests.post(
         "https://openrouter.ai/api/v1/chat/completions", json=body, headers=headers, timeout=TIMEOUT_SECONDS
     )
@@ -148,9 +183,11 @@ def _call_openrouter(prompt: str) -> str:
 
 
 def _parse_llm_json(raw_text: str):
+    if not raw_text or not isinstance(raw_text, str):  # None/empty/non-string content from any provider
+        return None
     try:
-        parsed = json.loads(_strip_fences(raw_text))
-    except (json.JSONDecodeError, TypeError):
+        parsed = json.loads(_extract_json_object(raw_text))
+    except (ValueError, json.JSONDecodeError, TypeError):
         return None
     if not isinstance(parsed, dict) or not REQUIRED_KEYS.issubset(parsed.keys()):
         return None
@@ -212,20 +249,26 @@ def analyze_and_reply(message: str, history: list) -> dict:
         except requests.exceptions.RequestException:
             reason = "openai_network_error"
 
-    # Tier 3: OpenRouter (free-tier model) as a second hedge, on yet another
-    # independent provider. Only one attempt, same reasoning as tier 2.
+    # Tier 3: OpenRouter, on yet another independent provider. With OpenAI
+    # permanently dead (zero credits), this is now our second real safety
+    # net after Gemini, not a last-resort extra — it gets the same
+    # retry-with-backoff treatment as tier 1, for the same reason.
     if OPENROUTER_API_KEY:
-        try:
-            raw_text = _call_openrouter(prompt)
-            parsed = _parse_llm_json(raw_text)
-            if parsed is not None:
-                parsed["source"] = "openrouter_fallback"
-                return parsed
-            reason = "openrouter_malformed_json"
-        except requests.exceptions.Timeout:
-            reason = "openrouter_timeout"
-        except requests.exceptions.RequestException:
-            reason = "openrouter_network_error"
+        for attempt in range(RETRY_ATTEMPTS):
+            try:
+                raw_text = _call_openrouter(prompt)
+                parsed = _parse_llm_json(raw_text)
+                if parsed is not None:
+                    parsed["source"] = "openrouter_fallback"
+                    return parsed
+                reason = "openrouter_malformed_json"
+                break  # malformed content won't fix itself on retry
+            except requests.exceptions.Timeout:
+                reason = "openrouter_timeout"
+            except requests.exceptions.RequestException:
+                reason = "openrouter_network_error"
+            if attempt < RETRY_ATTEMPTS - 1:
+                time.sleep(RETRY_BACKOFF_SECONDS)
 
     # Tier 4: local template, keyed off VADER's own read of the message.
     return _fallback(message, reason)

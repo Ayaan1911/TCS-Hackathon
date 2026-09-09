@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RetailSense</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --border: #e2e6ea;
+    --text: #1c2430;
+    --text-dim: #6b7684;
+    --text-faint: #9aa3ad;
+    --accent: #2f6fed;
+    --green: #1e9e5a;
+    --green-bg: #e6f7ee;
+    --amber: #b9740a;
+    --amber-bg: #fff3de;
+    --red: #d1342f;
+    --red-bg: #fdeceb;
+    --critical: #8b1538;
+    --critical-bg: #fbe4ea;
+    --grey: #8a919b;
+    --grey-bg: #eef0f2;
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: minmax(360px, 1.3fr) minmax(320px, 1fr);
+    height: 100vh;
+  }
+
+  /* ---------- LEFT: chat ---------- */
+  .chat-col {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    min-width: 0;
+  }
+
+  .chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  .chat-header h1 {
+    font-size: 19px;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .chat-header h1::before {
+    content: "●";
+    color: var(--accent);
+    margin-right: 8px;
+    font-size: 12px;
+    vertical-align: middle;
+  }
+
+  .reset-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 7px 14px;
+    border-radius: 7px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .reset-btn:hover { background: var(--grey-bg); color: var(--text); }
+
+  .chat-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .bubble {
+    max-width: 72%;
+    padding: 11px 15px;
+    border-radius: 14px;
+    font-size: 14.5px;
+    line-height: 1.45;
+    box-shadow: var(--shadow);
+  }
+
+  .bubble.user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+
+  .bubble.agent {
+    align-self: flex-start;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-bottom-left-radius: 4px;
+  }
+
+  .bubble.system-error {
+    align-self: center;
+    background: var(--red-bg);
+    color: var(--red);
+    border: 1px solid var(--red);
+    font-size: 13px;
+  }
+
+  .empty-hint {
+    margin: auto;
+    color: var(--text-faint);
+    font-size: 14px;
+    text-align: center;
+  }
+
+  .banner {
+    margin: 0 22px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    display: none;
+  }
+  .banner.show { display: block; }
+  .banner.band-priority { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); }
+  .banner.band-escalate { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+  .banner.band-critical {
+    background: var(--critical-bg);
+    color: var(--critical);
+    border: 1.5px solid var(--critical);
+    animation: pulse-border 1.4s infinite;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 10px;
+    padding: 16px 22px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  #messageInput {
+    flex: 1;
+    padding: 11px 14px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    font-size: 14.5px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  #messageInput:focus { border-color: var(--accent); }
+
+  #sendBtn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 0 22px;
+    border-radius: 9px;
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  #sendBtn:hover { opacity: 0.88; }
+  #sendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ---------- RIGHT: analysis ---------- */
+  .analysis-col {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    min-width: 0;
+  }
+
+  .analysis-header {
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .analysis-header h2 {
+    margin: 0;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-weight: 700;
+  }
+
+  .analysis-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+
+  .card-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  /* sentiment badge */
+  .badge-row { display: flex; align-items: center; gap: 9px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+  .dot.positive { background: var(--green); }
+  .dot.neutral { background: var(--grey); }
+  .dot.negative { background: var(--red); }
+  .badge-text { font-size: 15px; font-weight: 600; text-transform: capitalize; }
+
+  .confidence-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .sarcasm-note {
+    margin-top: 8px;
+    font-size: 12.5px;
+    color: var(--amber);
+    background: var(--amber-bg);
+    padding: 6px 9px;
+    border-radius: 6px;
+    display: none;
+  }
+  .sarcasm-note.show { display: block; }
+
+  .value-text {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .value-text.placeholder { color: var(--text-faint); font-weight: 400; }
+
+  .two-up {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* trend */
+  .trend-row { display: flex; align-items: baseline; gap: 10px; }
+  .trend-arrow { font-size: 22px; font-weight: 700; }
+  .trend-arrow.deteriorating { color: var(--red); }
+  .trend-arrow.improving { color: var(--green); }
+  .trend-arrow.stable { color: var(--grey); }
+  .trend-label { font-size: 14px; font-weight: 600; text-transform: capitalize; }
+  .trend-scores {
+    margin-top: 6px;
+    font-size: 11.5px;
+    color: var(--text-faint);
+    word-break: break-word;
+  }
+
+  /* escalation score */
+  .score-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .score-number { font-size: 24px; font-weight: 700; }
+  .band-pill {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    border-radius: 20px;
+  }
+  .band-pill.normal { background: var(--green-bg); color: var(--green); }
+  .band-pill.priority { background: var(--amber-bg); color: var(--amber); }
+  .band-pill.escalate { background: var(--red-bg); color: var(--red); }
+
+  .score-bar-track {
+    width: 100%;
+    height: 9px;
+    background: var(--grey-bg);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .score-bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 5px;
+    transition: width 0.4s ease, background 0.3s ease;
+    background: var(--grey);
+  }
+  .score-bar-fill.normal { background: var(--green); }
+  .score-bar-fill.priority { background: var(--amber); }
+  .score-bar-fill.escalate { background: var(--red); }
+
+  .components-line {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .critical-tag {
+    margin-top: 10px;
+    display: none;
+    align-items: center;
+    gap: 7px;
+    background: var(--critical-bg);
+    color: var(--critical);
+    border: 1.5px solid var(--critical);
+    padding: 7px 11px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 700;
+    animation: pulse-border 1.4s infinite;
+  }
+  .critical-tag.show { display: flex; }
+
+  @keyframes pulse-border {
+    0%   { box-shadow: 0 0 0 0 rgba(139, 21, 56, 0.35); }
+    70%  { box-shadow: 0 0 0 7px rgba(139, 21, 56, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(139, 21, 56, 0); }
+  }
+
+  ul.bullet-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13.5px;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  ul.bullet-list.empty { color: var(--text-faint); list-style: none; padding-left: 0; }
+
+  .debug-line {
+    font-size: 11px;
+    color: var(--text-faint);
+    text-align: center;
+    padding: 4px 0 2px;
+  }
+
+  /* shimmer / loading */
+  .shimmer {
+    color: transparent !important;
+    background: linear-gradient(90deg, var(--grey-bg) 25%, #dfe3e7 37%, var(--grey-bg) 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.3s ease infinite;
+    border-radius: 4px;
+    display: inline-block;
+    min-width: 60px;
+  }
+  @keyframes shimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+  }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #d3d8dd; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- LEFT: CHAT -->
+  <div class="chat-col">
+    <div class="chat-header">
+      <h1>RetailSense</h1>
+      <button class="reset-btn" id="resetBtn">Reset conversation</button>
+    </div>
+
+    <div class="chat-scroll" id="chatScroll">
+      <div class="empty-hint" id="emptyHint">Start a conversation — customer messages appear here.</div>
+    </div>
+
+    <div class="banner" id="banner"></div>
+
+    <div class="input-row">
+      <input type="text" id="messageInput" placeholder="Type a customer message..." autocomplete="off">
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: LIVE ANALYSIS -->
+  <div class="analysis-col">
+    <div class="analysis-header"><h2>Live Analysis</h2></div>
+
+    <div class="analysis-scroll">
+
+      <div class="card">
+        <div class="card-label">Sentiment</div>
+        <div class="badge-row">
+          <div class="dot neutral" id="sentDot"></div>
+          <div class="badge-text" id="sentLabel">—</div>
+        </div>
+        <div class="confidence-row">
+          <span>Confidence: <strong id="confValue" class="value-text placeholder">—</strong></span>
+        </div>
+        <div class="sarcasm-note" id="sarcasmNote">⚠ possible sarcasm — sources disagree</div>
+      </div>
+
+      <div class="two-up">
+        <div class="card">
+          <div class="card-label">Emotion</div>
+          <div class="value-text placeholder" id="emotionValue">—</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Intent</div>
+          <div class="value-text placeholder" id="intentValue">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Urgency</div>
+        <div class="value-text placeholder" id="urgencyValue">—</div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Sentiment Trend</div>
+        <div class="trend-row">
+          <div class="trend-arrow stable" id="trendArrow">→</div>
+          <div class="trend-label" id="trendLabel">stable</div>
+        </div>
+        <div class="trend-scores" id="trendScores">no data yet</div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Escalation Score</div>
+        <div class="score-top-row">
+          <span class="score-number" id="scoreNumber">0.0</span>
+          <span class="band-pill normal" id="bandPill">NORMAL</span>
+        </div>
+        <div class="score-bar-track">
+          <div class="score-bar-fill normal" id="scoreBarFill"></div>
+        </div>
+        <div class="components-line" id="componentsLine"></div>
+        <div class="critical-tag" id="criticalTag">🚨 CRITICAL — safety, fraud or legal issue detected</div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Reasons</div>
+        <ul class="bullet-list empty" id="reasonsList"><li style="list-style:none;">none yet</li></ul>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Next Best Action</div>
+        <ul class="bullet-list empty" id="nbaList"><li style="list-style:none;">none yet</li></ul>
+      </div>
+
+      <div class="debug-line" id="debugLine">model: —</div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+// 127.0.0.1, not "localhost": on this machine "localhost" resolves to
+// Docker Desktop's IPv6 listener on the same port, not our IPv4 server.
+const API_BASE = "http://127.0.0.1:8000";
+
+let sessionId = crypto.randomUUID();
+
+const el = {
+  chatScroll: document.getElementById("chatScroll"),
+  emptyHint: document.getElementById("emptyHint"),
+  banner: document.getElementById("banner"),
+  input: document.getElementById("messageInput"),
+  sendBtn: document.getElementById("sendBtn"),
+  resetBtn: document.getElementById("resetBtn"),
+
+  sentDot: document.getElementById("sentDot"),
+  sentLabel: document.getElementById("sentLabel"),
+  confValue: document.getElementById("confValue"),
+  sarcasmNote: document.getElementById("sarcasmNote"),
+  emotionValue: document.getElementById("emotionValue"),
+  intentValue: document.getElementById("intentValue"),
+  urgencyValue: document.getElementById("urgencyValue"),
+  trendArrow: document.getElementById("trendArrow"),
+  trendLabel: document.getElementById("trendLabel"),
+  trendScores: document.getElementById("trendScores"),
+  scoreNumber: document.getElementById("scoreNumber"),
+  bandPill: document.getElementById("bandPill"),
+  scoreBarFill: document.getElementById("scoreBarFill"),
+  componentsLine: document.getElementById("componentsLine"),
+  criticalTag: document.getElementById("criticalTag"),
+  reasonsList: document.getElementById("reasonsList"),
+  nbaList: document.getElementById("nbaList"),
+  debugLine: document.getElementById("debugLine"),
+};
+
+function addBubble(text, kind) {
+  el.emptyHint.style.display = "none";
+  const div = document.createElement("div");
+  div.className = "bubble " + kind;
+  div.textContent = text;
+  el.chatScroll.appendChild(div);
+  el.chatScroll.scrollTop = el.chatScroll.scrollHeight;
+  return div;
+}
+
+function setShimmer(elements, on) {
+  elements.forEach(e => {
+    if (on) { e.classList.add("shimmer"); }
+    else { e.classList.remove("shimmer"); }
+  });
+}
+
+function showListLoading(ul, label) {
+  ul.classList.remove("empty");
+  ul.innerHTML = "";
+  const li = document.createElement("li");
+  li.style.listStyle = "none";
+  const span = document.createElement("span");
+  span.className = "shimmer";
+  span.textContent = label;
+  li.appendChild(span);
+  ul.appendChild(li);
+}
+
+function addTypingBubble() {
+  el.emptyHint.style.display = "none";
+  const div = document.createElement("div");
+  div.className = "bubble agent";
+  const span = document.createElement("span");
+  span.className = "shimmer";
+  span.textContent = "typing a reply...";
+  div.appendChild(span);
+  el.chatScroll.appendChild(div);
+  el.chatScroll.scrollTop = el.chatScroll.scrollHeight;
+  return div;
+}
+
+function trendArrowChar(trend) {
+  if (trend === "deteriorating") return "↘";
+  if (trend === "improving") return "↗";
+  return "→";
+}
+
+function bandClass(band) {
+  if (band === "escalate") return "escalate";
+  if (band === "priority") return "priority";
+  return "normal";
+}
+
+function bandBannerText(band, hardOverride) {
+  if (hardOverride) return "🚨 CRITICAL — safety, fraud or legal issue detected. Escalate immediately.";
+  if (band === "escalate") return "🚨 ESCALATE — recommend routing to a human agent.";
+  if (band === "priority") return "⚠ PRIORITY — this conversation may need attention.";
+  return "";
+}
+
+function updateBanner(band, hardOverride) {
+  el.banner.className = "banner";
+  if (band === "normal") { el.banner.classList.remove("show"); return; }
+  el.banner.classList.add("show");
+  el.banner.classList.add(hardOverride ? "band-critical" : ("band-" + band));
+  el.banner.textContent = bandBannerText(band, hardOverride);
+}
+
+function updateSentimentBadge(label) {
+  el.sentDot.className = "dot " + label;
+  el.sentLabel.textContent = label;
+}
+
+function updateTrend(trend, scores) {
+  el.trendArrow.className = "trend-arrow " + trend;
+  el.trendArrow.textContent = trendArrowChar(trend);
+  el.trendLabel.textContent = trend;
+  if (scores && scores.length) {
+    el.trendScores.textContent = scores.map(s => s.toFixed(3)).join(" → ");
+  }
+}
+
+function updateScore(score, band, hardOverride) {
+  const cls = bandClass(band);
+  el.scoreNumber.textContent = score.toFixed(1);
+  el.bandPill.className = "band-pill " + cls;
+  el.bandPill.textContent = band.toUpperCase();
+  el.scoreBarFill.className = "score-bar-fill " + cls;
+  el.scoreBarFill.style.width = Math.max(0, Math.min(100, score)) + "%";
+  el.criticalTag.classList.toggle("show", !!hardOverride);
+  updateBanner(band, hardOverride);
+}
+
+function fillList(ul, items) {
+  ul.innerHTML = "";
+  if (!items || items.length === 0) {
+    ul.classList.add("empty");
+    const li = document.createElement("li");
+    li.style.listStyle = "none";
+    li.textContent = "none";
+    ul.appendChild(li);
+    return;
+  }
+  ul.classList.remove("empty");
+  items.forEach(item => {
+    const li = document.createElement("li");
+    li.textContent = item;
+    ul.appendChild(li);
+  });
+}
+
+function resetPanel() {
+  updateSentimentBadge("neutral");
+  el.confValue.textContent = "—";
+  el.confValue.classList.add("placeholder");
+  el.sarcasmNote.classList.remove("show");
+  el.emotionValue.textContent = "—";
+  el.emotionValue.classList.add("placeholder");
+  el.intentValue.textContent = "—";
+  el.intentValue.classList.add("placeholder");
+  el.urgencyValue.textContent = "—";
+  el.urgencyValue.classList.add("placeholder");
+  updateTrend("stable", []);
+  el.trendScores.textContent = "no data yet";
+  updateScore(0, "normal", false);
+  el.componentsLine.textContent = "";
+  fillList(el.reasonsList, []);
+  fillList(el.nbaList, []);
+  el.debugLine.textContent = "model: —";
+}
+
+async function postJSON(path, body) {
+  const resp = await fetch(API_BASE + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  return resp.json();
+}
+
+async function sendMessage() {
+  const text = el.input.value.trim();
+  if (!text) return;
+
+  el.input.value = "";
+  el.sendBtn.disabled = true;
+  addBubble(text, "user");
+
+  const loadingFields = [el.emotionValue, el.intentValue, el.urgencyValue, el.confValue];
+  setShimmer(loadingFields, true);
+  showListLoading(el.reasonsList, "analyzing...");
+  showListLoading(el.nbaList, "analyzing...");
+  const typingBubble = addTypingBubble();
+
+  const quickPromise = postJSON("/analyze/quick", { session_id: sessionId, message: text })
+    .then(data => {
+      updateSentimentBadge(data.sentiment_label);
+      updateTrend(data.trend, data.trajectory);
+      updateScore(data.provisional_score, data.provisional_band, false);
+    })
+    .catch(err => {
+      console.error("analyze/quick failed", err);
+    });
+
+  const chatPromise = postJSON("/chat", { session_id: sessionId, message: text })
+    .then(data => {
+      typingBubble.remove();
+      addBubble(data.reply, "agent");
+
+      updateSentimentBadge(data.sentiment.label);
+      el.confValue.textContent = Math.round(data.sentiment.confidence * 100) + "%";
+      el.sarcasmNote.classList.toggle("show", !!data.sentiment.sarcasm_flag);
+
+      el.emotionValue.textContent = data.emotion;
+      el.intentValue.textContent = data.intent;
+      el.urgencyValue.textContent = data.urgency.toUpperCase();
+
+      updateTrend(data.trajectory.trend, data.trajectory.scores);
+      updateScore(data.escalation.score, data.escalation.band, data.escalation.hard_override);
+
+      const c = data.escalation.components;
+      el.componentsLine.textContent =
+        `severity ${c.severity.toFixed(0)} · urgency ${c.urgency.toFixed(0)} · trend ${c.trend.toFixed(0)} · sensitive ${c.sensitive.toFixed(0)}`;
+
+      fillList(el.reasonsList, data.escalation.reasons);
+      fillList(el.nbaList, data.next_best_action);
+
+      el.debugLine.textContent = "model: " + data.reply_source;
+    })
+    .catch(err => {
+      console.error("chat failed", err);
+      typingBubble.remove();
+      addBubble("⚠ Could not reach the server. Is backend/main.py running on :8000?", "system-error");
+    })
+    .finally(() => {
+      setShimmer(loadingFields, false);
+    });
+
+  await Promise.allSettled([quickPromise, chatPromise]);
+  el.sendBtn.disabled = false;
+  el.input.focus();
+}
+
+async function resetConversation() {
+  try {
+    await postJSON("/reset", { session_id: sessionId });
+  } catch (err) {
+    console.error("reset failed", err);
+  }
+  sessionId = crypto.randomUUID();
+  el.chatScroll.innerHTML = "";
+  el.chatScroll.appendChild(el.emptyHint);
+  el.emptyHint.style.display = "block";
+  el.banner.classList.remove("show");
+  resetPanel();
+  el.input.focus();
+}
+
+el.sendBtn.addEventListener("click", sendMessage);
+el.input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
+el.resetBtn.addEventListener("click", resetConversation);
+
+resetPanel();
+</script>
+
+</body>
+</html>

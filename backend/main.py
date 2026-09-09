@@ -1,5 +1,7 @@
 """FastAPI layer wiring the local scorer, LLM, agreement, and escalation engine together."""
 
+import socket
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -122,5 +124,26 @@ def health():
     return {"status": "ok", "gemini_key_configured": bool(llm_client.GEMINI_API_KEY)}
 
 
+def _find_available_port(candidates):
+    for port in candidates:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("0.0.0.0", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(f"none of the candidate ports are available: {candidates}")
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 8000 first, falling back to 8001/8002 if something else already holds
+    # it. The frontend's API_BASE is not updated automatically, so the port
+    # actually bound is printed loudly here rather than failing silently.
+    port = _find_available_port([8000, 8001, 8002])
+    # flush=True: stdout is fully buffered (not line-buffered) whenever it's
+    # redirected rather than a live terminal, so without this the message
+    # can sit invisible in the buffer for the life of the process.
+    print(f"RetailSense backend running on http://127.0.0.1:{port}", flush=True)
+    if port != 8000:
+        print(f"*** NOT the default port 8000 — update frontend/index.html's API_BASE to :{port} if needed ***", flush=True)
+    uvicorn.run(app, host="0.0.0.0", port=port)
