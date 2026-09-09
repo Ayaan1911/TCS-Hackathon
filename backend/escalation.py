@@ -29,14 +29,19 @@ def compute_trajectory(scores: list) -> dict:
     if len(recent) < 2:
         return {"trend": "stable", "trend_score": 0.0}
 
-    current = recent[-1]
-    declining = all(recent[i] > recent[i + 1] for i in range(len(recent) - 1))
-    improving = all(recent[i] < recent[i + 1] for i in range(len(recent) - 1))
+    # Net movement across the window, not strict step-by-step monotonicity:
+    # a real multi-turn complaint almost never worsens in perfectly
+    # monotonic steps even when it has clearly deteriorated overall (e.g.
+    # delighted -> very negative -> still very negative but marginally less
+    # so). Requiring every consecutive step to worsen scored 0 trend credit
+    # on exactly that kind of conversation.
+    first, current = recent[0], recent[-1]
+    net_change = current - first
 
-    if declining and current < 0:
-        magnitude = recent[0] - recent[-1]
+    if net_change < 0 and current < 0:
+        magnitude = abs(net_change)
         return {"trend": "deteriorating", "trend_score": min(100.0, magnitude * 100)}
-    if improving:
+    if net_change > 0:
         return {"trend": "improving", "trend_score": 0.0}
     return {"trend": "stable", "trend_score": 0.0}
 
